@@ -1,6 +1,7 @@
 package io.estatico.newtype.macros
 
 import org.scalatest.{FlatSpec, Matchers}
+import io.estatico.newtype.ops._
 
 class NewTypeMacrosTest extends FlatSpec with Matchers {
 
@@ -27,8 +28,20 @@ class NewTypeMacrosTest extends FlatSpec with Matchers {
   it should "generate an accessor extension method" in {
     Foo(1).value shouldBe 1
   }
+
+  behavior of "@newtype class"
+
+  it should "not expose a default constructor" in {
+    Baz("foo") shouldBe "FOO"
+  }
 }
 
 object NewTypeMacrosTest {
+
   @newtype case class Foo(value: Int)
+
+  @newtype class Baz(value: String)
+  object Baz {
+    def apply(value: String): Baz = value.toUpperCase.coerce[Baz]
+  }
 }

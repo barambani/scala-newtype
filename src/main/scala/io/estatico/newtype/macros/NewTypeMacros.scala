@@ -1,5 +1,6 @@
 package io.estatico.newtype.macros
 
+import io.estatico.newtype.Coercible
 import scala.reflect.macros.blackbox
 
 private[macros] object NewTypeMacros {
@@ -17,9 +18,18 @@ private[macros] object NewTypeMacros {
     }
 
     def runClass(clsDef: ClassDef) = {
+      runClassWithObj(clsDef, q"object ${clsDef.name.toTermName}".asInstanceOf[ModuleDef])
+    }
+
+    def runClassWithObj(clsDef: ClassDef, modDef: ModuleDef) = {
+
+      val CoercibleCls = typeOf[Coercible[Nothing, Nothing]].typeSymbol
+      val CoercibleObj = CoercibleCls.companion
 
       val ClassDef(mods, typeName, tparams, template) = clsDef
       val Template(parents, _, body) = template
+
+      val q"object $objName extends { ..$objEarlyDefs } with ..$objParents { $objSelf => ..$objDefs }" = modDef
 
       val ctor = getConstructor(body)
       val valDef = extractConstructorValDef(ctor)
@@ -29,7 +39,7 @@ private[macros] object NewTypeMacros {
         case vd: ValDef if vd.mods.hasFlag(Flag.PARAMACCESSOR) && vd.name == valDef.name => ()
       }.isDefined
 
-      if (hasUnsupportedExtends(parents)) fail(s"newtypes do not support inheritance")
+      validateParents(parents)
 
       val baseRefinementName = TypeName(typeName.decodedName + "$newtype")
 
@@ -53,16 +63,32 @@ private[macros] object NewTypeMacros {
           """
         )
 
+        val coercibleInstances = List(
+          q"@inline implicit def unsafeWrap: $CoercibleCls[Repr, Type] = $CoercibleObj.instance",
+          q"@inline implicit def unsafeUnwrap: $CoercibleCls[Type, Repr] = $CoercibleObj.instance",
+          q"@inline implicit def unsafeWrapM[M[_]]: $CoercibleCls[M[Repr], M[Type]] = $CoercibleObj.instance",
+          q"@inline implicit def unsafeUnwrapM[M[_]]: $CoercibleCls[M[Type], M[Repr]] = $CoercibleObj.instance",
+          // Avoid ClassCastException with Array types by prohibiting Array coercing.
+          q"@inline implicit def cannotWrapArrayAmbiguous1: $CoercibleCls[Array[Repr], Array[Type]] = $CoercibleObj.instance",
+          q"@inline implicit def cannotWrapArrayAmbiguous2: $CoercibleCls[Array[Repr], Array[Type]] = $CoercibleObj.instance",
+          q"@inline implicit def cannotUnwrapArrayAmbiguous1: $CoercibleCls[Array[Type], Array[Repr]] = $CoercibleObj.instance",
+          q"@inline implicit def cannotUnwrapArrayAmbiguous2: $CoercibleCls[Array[Type], Array[Repr]] = $CoercibleObj.instance"
+        )
+
         q"""
           type $typeName = ${typeName.toTermName}.Type
-          object ${typeName.toTermName} {
+          object $objName extends { ..$objEarlyDefs } with ..$objParents { $objSelf =>
+            ..$objDefs
+            type Repr = ${valDef.tpt}
             type Base = { type $baseRefinementName }
             trait Tag
             type Type = Base with Tag
             ..$maybeApplyMethod
             ..$maybeOpsDef
+            ..$coercibleInstances
           }
         """
+
       } else {
         ???
       }
@@ -77,15 +103,12 @@ private[macros] object NewTypeMacros {
       case _ => fail("Unsupported constructor, must have exactly one argument")
     }
 
-    def runClassWithObj(clsDef: ClassDef, modDef: ModuleDef) = {
-      val q"object $objName extends { ..$objEarlyDefs } with ..$objParents { $objSelf => ..$objDefs }"
-        = modDef
-      ???
-    }
-
-    def hasUnsupportedExtends(parents: List[Tree]): Boolean = {
-      val ignoredExtends = List(tq"scala.Product", tq"scala.Serializable")
-      !parents.forall(t => ignoredExtends.exists(t.equalsStructure))
+    def validateParents(parents: List[Tree]): Unit = {
+      val ignoredExtends = List(tq"scala.Product", tq"scala.Serializable", tq"scala.AnyRef")
+      val unsupported = parents.filterNot(t => ignoredExtends.exists(t.equalsStructure))
+      if (unsupported.nonEmpty) {
+        fail(s"newtypes do not support inheritance; illegal supertypes: ${unsupported.mkString(", ")}")
+      }
     }
 
     run()
