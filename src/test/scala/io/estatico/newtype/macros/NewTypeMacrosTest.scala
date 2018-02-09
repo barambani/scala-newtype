@@ -32,6 +32,13 @@ class NewTypeMacrosTest extends FlatSpec with Matchers {
     Foo(1).value shouldBe 1
   }
 
+  it should "not generate an accessor method if private" in {
+    // This is also useful so we can define local newtypes.
+    @newtype case class Foo0[A](private val value: A)
+    Foo0('a') shouldBe 'a'
+    assertDoesNotCompile("Foo0('a').value")
+  }
+
   it should "convert instance methods into extension methods" in {
     val res: Bar = Bar(2).twice
     res shouldBe 4

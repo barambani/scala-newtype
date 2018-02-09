@@ -35,8 +35,13 @@ private[macros] object NewTypeMacros {
       val valDef = extractConstructorValDef(ctor)
       val shouldGenerateApplyMethod = mods.hasFlag(Flag.CASE)
 
+      // We should expose the constructor argument as an extension method only if
+      // it was defined as a public param.
       val shouldGenerateValExtensionMethod = body.collectFirst {
-        case vd: ValDef if vd.mods.hasFlag(Flag.PARAMACCESSOR) && vd.name == valDef.name => ()
+        case vd: ValDef
+          if vd.mods.hasFlag(Flag.PARAMACCESSOR)
+             && !vd.mods.hasFlag(Flag.PRIVATE)
+             && vd.name == valDef.name => ()
       }.isDefined
 
       val instanceMethods = getInstanceMethods(body)
