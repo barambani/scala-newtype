@@ -78,6 +78,19 @@ class NewTypeMacrosTest extends FlatSpec with Matchers {
     assertTypeError("Array(ot).coerce[Array[List[Option[Int]]]]")
   }
 
+  it should "support covariance" in {
+    val x = Cov(List(Some(1)))
+    assertCompiles("x: Cov[Some[Int]]")
+
+    val y = Cov(List(None))
+    assertCompiles("y: Cov[None.type]")
+
+    def someOrZero[A](c: Cov[Option[Int]]): Cov[Int] = Cov(c.value.map(_.getOrElse(0)))
+
+    someOrZero(x) shouldBe List(1)
+    someOrZero(y) shouldBe List(0)
+  }
+
   behavior of "@newtype with type bounds"
 
   it should "enforce type bounds" in {
@@ -113,4 +126,6 @@ object NewTypeMacrosTest {
   @newtype case class OptionT[F[_], A](value: F[Option[A]])
 
   @newtype case class Sub[A <: java.util.Map[String, Int]](value: A)
+
+  @newtype case class Cov[+A](value: List[A])
 }

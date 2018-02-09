@@ -97,8 +97,13 @@ private[macros] object NewTypeMacros {
         // Converts [F[_], A] to [F, A]; needed for applying the defined type params.
         val tparamNames: List[TypeName] = tparams.map(_.name)
 
+        // Type params with variance removed for building methods.
+        val tparamsNoVar: List[TypeDef] = tparams.map(td =>
+          TypeDef(Modifiers(Flag.PARAM), td.name, td.tparams, td.rhs)
+        )
+
         val maybeApplyMethod = if (!shouldGenerateApplyMethod) Nil else List(
-          q"def apply[..$tparams](${valDef.name}: ${valDef.tpt}): Type[..$tparamNames] = ${valDef.name}.asInstanceOf[Type[..$tparamNames]]"
+          q"def apply[..$tparamsNoVar](${valDef.name}: ${valDef.tpt}): Type[..$tparamNames] = ${valDef.name}.asInstanceOf[Type[..$tparamNames]]"
         )
 
         val maybeValDefMethod = if (!shouldGenerateValExtensionMethod) Nil else List(
@@ -116,15 +121,15 @@ private[macros] object NewTypeMacros {
         )
 
         val coercibleInstances = List[Tree](
-          q"@inline implicit def unsafeWrap[..$tparams]: $CoercibleCls[Repr[..$tparamNames], Type[..$tparamNames]] = $CoercibleObj.instance",
-          q"@inline implicit def unsafeUnwrap[..$tparams]: $CoercibleCls[Type[..$tparamNames], Repr[..$tparamNames]] = $CoercibleObj.instance",
-          q"@inline implicit def unsafeWrapM[M[_], ..$tparams]: $CoercibleCls[M[Repr[..$tparamNames]], M[Type[..$tparamNames]]] = $CoercibleObj.instance",
-          q"@inline implicit def unsafeUnwrapM[M[_], ..$tparams]: $CoercibleCls[M[Type[..$tparamNames]], M[Repr[..$tparamNames]]] = $CoercibleObj.instance",
+          q"@inline implicit def unsafeWrap[..$tparamsNoVar]: $CoercibleCls[Repr[..$tparamNames], Type[..$tparamNames]] = $CoercibleObj.instance",
+          q"@inline implicit def unsafeUnwrap[..$tparamsNoVar]: $CoercibleCls[Type[..$tparamNames], Repr[..$tparamNames]] = $CoercibleObj.instance",
+          q"@inline implicit def unsafeWrapM[M[_], ..$tparamsNoVar]: $CoercibleCls[M[Repr[..$tparamNames]], M[Type[..$tparamNames]]] = $CoercibleObj.instance",
+          q"@inline implicit def unsafeUnwrapM[M[_], ..$tparamsNoVar]: $CoercibleCls[M[Type[..$tparamNames]], M[Repr[..$tparamNames]]] = $CoercibleObj.instance",
           // Avoid ClassCastException with Array types by prohibiting Array coercing.
-          q"@inline implicit def cannotWrapArrayAmbiguous1[..$tparams]: $CoercibleCls[Array[Repr[..$tparamNames]], Array[Type[..$tparamNames]]] = $CoercibleObj.instance",
-          q"@inline implicit def cannotWrapArrayAmbiguous2[..$tparams]: $CoercibleCls[Array[Repr[..$tparamNames]], Array[Type[..$tparamNames]]] = $CoercibleObj.instance",
-          q"@inline implicit def cannotUnwrapArrayAmbiguous1[..$tparams]: $CoercibleCls[Array[Type[..$tparamNames]], Array[Repr[..$tparamNames]]] = $CoercibleObj.instance",
-          q"@inline implicit def cannotUnwrapArrayAmbiguous2[..$tparams]: $CoercibleCls[Array[Type[..$tparamNames]], Array[Repr[..$tparamNames]]] = $CoercibleObj.instance"
+          q"@inline implicit def cannotWrapArrayAmbiguous1[..$tparamsNoVar]: $CoercibleCls[Array[Repr[..$tparamNames]], Array[Type[..$tparamNames]]] = $CoercibleObj.instance",
+          q"@inline implicit def cannotWrapArrayAmbiguous2[..$tparamsNoVar]: $CoercibleCls[Array[Repr[..$tparamNames]], Array[Type[..$tparamNames]]] = $CoercibleObj.instance",
+          q"@inline implicit def cannotUnwrapArrayAmbiguous1[..$tparamsNoVar]: $CoercibleCls[Array[Type[..$tparamNames]], Array[Repr[..$tparamNames]]] = $CoercibleObj.instance",
+          q"@inline implicit def cannotUnwrapArrayAmbiguous2[..$tparamsNoVar]: $CoercibleCls[Array[Type[..$tparamNames]], Array[Repr[..$tparamNames]]] = $CoercibleObj.instance"
         )
 
         q"""
