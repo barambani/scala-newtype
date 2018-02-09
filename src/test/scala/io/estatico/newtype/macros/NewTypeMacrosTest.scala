@@ -4,11 +4,16 @@ import org.scalatest.{FlatSpec, Matchers}
 
 class NewTypeMacrosTest extends FlatSpec with Matchers {
 
-  behavior of "@newtype"
+  import NewTypeMacrosTest._
 
-  it should "work" in {
-    @newtype case class Foo(value: Int)
+  behavior of "@newtype case class"
+
+  it should "generate a type alias, companion object, and constructor" in {
+
+    // Ensure that we can access the type and the constructor.
     val res: Foo = Foo(1)
+
+    // Should have the same runtime representation as Int.
     res shouldBe 1
     res shouldBe Foo(1)
 
@@ -18,4 +23,12 @@ class NewTypeMacrosTest extends FlatSpec with Matchers {
     //   case _ => ???
     // }
   }
+
+  it should "generate an accessor extension method" in {
+    Foo(1).value shouldBe 1
+  }
+}
+
+object NewTypeMacrosTest {
+  @newtype case class Foo(value: Int)
 }
