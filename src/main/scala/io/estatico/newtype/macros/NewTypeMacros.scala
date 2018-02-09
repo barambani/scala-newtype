@@ -26,6 +26,8 @@ private[macros] object NewTypeMacros {
 
     def runClassWithObj(clsDef: ClassDef, modDef: ModuleDef) = {
 
+      val isDefinedInObject = c.internal.enclosingOwner.isModuleClass
+
       val ClassDef(mods, typeName, tparams, template) = clsDef
       val Template(parents, _, body) = template
 
@@ -44,7 +46,22 @@ private[macros] object NewTypeMacros {
              && vd.name == valDef.name => ()
       }.isDefined
 
+      if (shouldGenerateValExtensionMethod && !isDefinedInObject) {
+        c.abort(valDef.pos, s"""
+          |Fields can only be defined for newtypes defined in an object
+          |Consider defining as: private val ${valDef.name.decodedName}
+        """.trim.stripMargin
+        )
+      }
+
       val instanceMethods = getInstanceMethods(body)
+
+      if (instanceMethods.nonEmpty && !isDefinedInObject) {
+        c.abort(
+          instanceMethods.head.pos,
+          s"Methods can only be defined for newtypes defined in an object"
+        )
+      }
 
       validateParents(parents)
 
@@ -61,6 +78,10 @@ private[macros] object NewTypeMacros {
         )
 
         val extensionMethods = maybeValDefMethod ++ instanceMethods
+
+        if (extensionMethods.nonEmpty && !isDefinedInObject) {
+          fail("Methods can only be defined for newtypes defined in an object")
+        }
 
         val maybeOpsDef = if (extensionMethods.isEmpty) Nil else List(
           q"""
