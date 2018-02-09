@@ -9,6 +9,9 @@ private[macros] object NewTypeMacros {
 
     import c.universe._
 
+    val CoercibleCls = typeOf[Coercible[Nothing, Nothing]].typeSymbol
+    val CoercibleObj = CoercibleCls.companion
+
     def fail(msg: String) = c.abort(c.enclosingPosition, msg)
 
     def run() = annottees match {
@@ -23,9 +26,6 @@ private[macros] object NewTypeMacros {
 
     def runClassWithObj(clsDef: ClassDef, modDef: ModuleDef) = {
 
-      val CoercibleCls = typeOf[Coercible[Nothing, Nothing]].typeSymbol
-      val CoercibleObj = CoercibleCls.companion
-
       val ClassDef(mods, typeName, tparams, template) = clsDef
       val Template(parents, _, body) = template
 
@@ -38,6 +38,8 @@ private[macros] object NewTypeMacros {
       val shouldGenerateValExtensionMethod = body.collectFirst {
         case vd: ValDef if vd.mods.hasFlag(Flag.PARAMACCESSOR) && vd.name == valDef.name => ()
       }.isDefined
+
+      val instanceMethods = getInstanceMethods(body)
 
       validateParents(parents)
 
@@ -53,9 +55,9 @@ private[macros] object NewTypeMacros {
           q"def ${valDef.name}: ${valDef.tpt} = repr.asInstanceOf[${valDef.tpt}]"
         )
 
-        val extensionMethods = maybeValDefMethod
+        val extensionMethods = maybeValDefMethod ++ instanceMethods
 
-        val maybeOpsDef = if (maybeValDefMethod.isEmpty) Nil else List(
+        val maybeOpsDef = if (extensionMethods.isEmpty) Nil else List(
           q"""
             implicit final class Ops$$newtype(private val repr: Type) extends AnyVal {
               ..$extensionMethods
@@ -90,13 +92,70 @@ private[macros] object NewTypeMacros {
         """
 
       } else {
-        ???
+        // NewTypes with arity
+
+        // Converts [F[_], A] to [F, A]; needed for applying the defined type params.
+        val tparamNames: List[TypeName] = tparams.map(_.name)
+
+        val maybeApplyMethod = if (!shouldGenerateApplyMethod) Nil else List(
+          q"def apply[..$tparams](${valDef.name}: ${valDef.tpt}): Type[..$tparamNames] = ${valDef.name}.asInstanceOf[Type[..$tparamNames]]"
+        )
+
+        val maybeValDefMethod = if (!shouldGenerateValExtensionMethod) Nil else List(
+          q"def ${valDef.name}: ${valDef.tpt} = repr.asInstanceOf[${valDef.tpt}]"
+        )
+
+        val extensionMethods = maybeValDefMethod ++ instanceMethods
+
+        val maybeOpsDef = if (extensionMethods.isEmpty) Nil else List(
+          q"""
+            implicit final class Ops$$newtype[..$tparams](private val repr: Type[..$tparamNames]) extends AnyVal {
+              ..$extensionMethods
+            }
+          """
+        )
+
+        val coercibleInstances = List[Tree](
+          q"@inline implicit def unsafeWrap[..$tparams]: $CoercibleCls[Repr[..$tparamNames], Type[..$tparamNames]] = $CoercibleObj.instance",
+          q"@inline implicit def unsafeUnwrap[..$tparams]: $CoercibleCls[Type[..$tparamNames], Repr[..$tparamNames]] = $CoercibleObj.instance",
+          q"@inline implicit def unsafeWrapM[M[_], ..$tparams]: $CoercibleCls[M[Repr[..$tparamNames]], M[Type[..$tparamNames]]] = $CoercibleObj.instance",
+          q"@inline implicit def unsafeUnwrapM[M[_], ..$tparams]: $CoercibleCls[M[Type[..$tparamNames]], M[Repr[..$tparamNames]]] = $CoercibleObj.instance",
+          // Avoid ClassCastException with Array types by prohibiting Array coercing.
+          q"@inline implicit def cannotWrapArrayAmbiguous1[..$tparams]: $CoercibleCls[Array[Repr[..$tparamNames]], Array[Type[..$tparamNames]]] = $CoercibleObj.instance",
+          q"@inline implicit def cannotWrapArrayAmbiguous2[..$tparams]: $CoercibleCls[Array[Repr[..$tparamNames]], Array[Type[..$tparamNames]]] = $CoercibleObj.instance",
+          q"@inline implicit def cannotUnwrapArrayAmbiguous1[..$tparams]: $CoercibleCls[Array[Type[..$tparamNames]], Array[Repr[..$tparamNames]]] = $CoercibleObj.instance",
+          q"@inline implicit def cannotUnwrapArrayAmbiguous2[..$tparams]: $CoercibleCls[Array[Type[..$tparamNames]], Array[Repr[..$tparamNames]]] = $CoercibleObj.instance"
+        )
+
+        q"""
+          type $typeName[..$tparams] = ${typeName.toTermName}.Type[..$tparamNames]
+          object $objName extends { ..$objEarlyDefs } with ..$objParents { $objSelf =>
+            ..$objDefs
+            type Repr[..$tparams] = ${valDef.tpt}
+            type Base = { type $baseRefinementName }
+            trait Tag[..$tparams]
+            type Type[..$tparams] = Base with Tag[..$tparamNames]
+            ..$maybeApplyMethod
+            ..$maybeOpsDef
+            ..$coercibleInstances
+          }
+        """
       }
     }
 
     def getConstructor(body: List[Tree]): DefDef = body.collectFirst {
       case dd: DefDef if dd.name == termNames.CONSTRUCTOR => dd
     }.getOrElse(fail("Failed to locate constructor"))
+
+    def getInstanceMethods(body: List[Tree]): List[DefDef] = body.flatMap {
+      case vd: ValDef =>
+        if (vd.mods.hasFlag(Flag.CASEACCESSOR) || vd.mods.hasFlag(Flag.PARAMACCESSOR)) Nil
+        else fail("val definitions not supported, use def instead")
+      case dd: DefDef =>
+        if (dd.name == termNames.CONSTRUCTOR) Nil else List(dd)
+      case x =>
+        fail(s"illegal definition in newtype: $x")
+    }
 
     def extractConstructorValDef(dd: DefDef): ValDef = dd.vparamss match {
       case List(List(vd)) => vd
