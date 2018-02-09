@@ -12,7 +12,8 @@ class NewTypeMacrosTest extends FlatSpec with Matchers {
   it should "generate a type alias, companion object, and constructor" in {
 
     // Ensure that we can access the type and the constructor.
-    val res: Foo = Foo(1)
+    val res = Foo(1)
+    assertCompiles("res: Foo")
 
     // Should have the same runtime representation as Int.
     res shouldBe 1
@@ -56,8 +57,8 @@ class NewTypeMacrosTest extends FlatSpec with Matchers {
   it should "generate a proper constructor" in {
     val repr = List(Option(1))
     val ot = OptionT(repr)
-    // Assert that type is correct and that it has the same representation as repr.
-    (ot: OptionT[List, Int]) shouldBe repr
+    assertCompiles("ot: OptionT[List, Int]")
+    ot shouldBe repr
   }
 
   it should "be Coercible" in {
@@ -75,6 +76,19 @@ class NewTypeMacrosTest extends FlatSpec with Matchers {
     val repr = List(Option(1))
     val ot = OptionT(repr)
     assertTypeError("Array(ot).coerce[Array[List[Option[Int]]]]")
+  }
+
+  behavior of "@newtype with type bounds"
+
+  it should "enforce type bounds" in {
+    val x = Sub(new java.util.HashMap[String, Int]): Sub[java.util.HashMap[String, Int]]
+    val y = Sub(new java.util.concurrent.ConcurrentHashMap[String, Int])
+
+    assertCompiles("x: Sub[java.util.HashMap[String, Int]]")
+    assertCompiles("y: Sub[java.util.concurrent.ConcurrentHashMap[String, Int]]")
+
+    assertDoesNotCompile("x: Sub[java.util.concurrent.ConcurrentHashMap[String, Int]]")
+    assertDoesNotCompile("y: Sub[java.util.HashMap[String, Int]]")
   }
 }
 
@@ -97,4 +111,6 @@ object NewTypeMacrosTest {
   }
 
   @newtype case class OptionT[F[_], A](value: F[Option[A]])
+
+  @newtype case class Sub[A <: java.util.Map[String, Int]](value: A)
 }
