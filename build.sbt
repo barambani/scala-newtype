@@ -10,13 +10,18 @@ scalacOptions ++= Seq(
   "-feature",
   "-deprecation",
   "-language:higherKinds",
-  "-language:implicitConversions"
+  "-language:implicitConversions",
+  "-language:experimental.macros"
 )
 
 libraryDependencies ++= Seq(
+  scalaOrganization.value % "scala-reflect" % scalaVersion.value % Provided,
+  scalaOrganization.value % "scala-compiler" % scalaVersion.value % Provided,
   "org.scalacheck" %% "scalacheck" % "1.13.4" % "test",
   "org.scalatest" %% "scalatest" % "3.0.0" % "test"
 )
+
+addCompilerPlugin("org.scalamacros" % "paradise" % "2.1.0" cross CrossVersion.full)
 
 // Publish settings
 
