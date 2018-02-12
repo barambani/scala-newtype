@@ -56,7 +56,8 @@ private[macros] object NewTypeMacros {
       val companionExtraDefs =
         maybeGenerateApplyMethod(clsDef, valDef, tparamsNoVar, tparamNames) ++
         maybeGenerateOpsDef(clsDef, valDef, tparamsNoVar, tparamNames) ++
-        generateCoercibleInstances(tparamsNoVar, tparamNames)
+        generateCoercibleInstances(tparamsNoVar, tparamNames) ++
+        List(generateDerivingMethod(tparamsNoVar, tparamNames))
 
       if (tparams.isEmpty) {
         q"""
@@ -151,6 +152,20 @@ private[macros] object NewTypeMacros {
             """
           }
         )
+      }
+    }
+
+    def generateDerivingMethod(
+      tparamsNoVar: List[TypeDef], tparamNames: List[TypeName]
+    ): Tree = {
+      if (tparamsNoVar.isEmpty) {
+        q"def deriving[T[_]](implicit ev: T[Repr]): T[Type] = ev.asInstanceOf[T[Type]]"
+      } else {
+        q"""
+          def deriving[T[_], ..$tparamsNoVar](
+            implicit ev: T[Repr[..$tparamNames]]
+          ): T[Type[..$tparamNames]] = ev.asInstanceOf[T[Type[..$tparamNames]]]
+        """
       }
     }
 

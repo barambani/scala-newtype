@@ -2,6 +2,7 @@ package io.estatico.newtype.macros
 
 import org.scalatest.{FlatSpec, Matchers}
 import io.estatico.newtype.ops._
+import org.scalacheck.Arbitrary
 
 class NewTypeMacrosTest extends FlatSpec with Matchers {
 
@@ -109,6 +110,54 @@ class NewTypeMacrosTest extends FlatSpec with Matchers {
 
     assertDoesNotCompile("x: Sub[java.util.concurrent.ConcurrentHashMap[String, Int]]")
     assertDoesNotCompile("y: Sub[java.util.HashMap[String, Int]]")
+  }
+
+  behavior of "deriving"
+
+  it should "support deriving type class instances for simple newtypes" in {
+    @newtype case class Text(private val s: String)
+    object Text {
+      implicit val arb: Arbitrary[Text] = deriving
+    }
+    val x = implicitly[Arbitrary[Text]].arbitrary.sample.get
+    assertCompiles("x: Text")
+    val y = x.coerce[String]
+    assertCompiles("y: String")
+  }
+
+  it should "support auto-deriving type class instances for simple newtypes" in {
+    @newtype case class Text(private val s: String)
+    object Text {
+      implicit def typeclass[T[_]](implicit ev: T[String]): T[Text] = deriving
+    }
+    val x = implicitly[Arbitrary[Text]].arbitrary.sample.get
+    assertCompiles("x: Text")
+    val y = x.coerce[String]
+    assertCompiles("y: String")
+  }
+
+  it should "support deriving type class instances for newtypes with type params" in {
+    @newtype case class EitherT[F[_], L, R](private val x: F[Either[L, R]])
+    object EitherT {
+      // Derive the Arbitrary instance explicitly
+      implicit def arb[F[_], L, R](implicit a: Arbitrary[F[Either[L, R]]]): Arbitrary[EitherT[F, L, R]] = deriving
+    }
+    val x = implicitly[Arbitrary[EitherT[List, String, Int]]].arbitrary.sample.get
+    assertCompiles("x: EitherT[List, String, Int]")
+    val y = x.coerce[List[Either[String, Int]]]
+    assertCompiles("y: List[Either[String, Int]]")
+  }
+
+  it should "support auto-deriving type class instances for newtypes with type params" in {
+    @newtype case class EitherT[F[_], L, R](private val x: F[Either[L, R]])
+    object EitherT {
+      // Auto-derive all type classes of kind * -> *
+      implicit def typeclass[T[_], F[_], L, R](implicit t: T[F[Either[L, R]]]): T[EitherT[F, L, R]] = deriving
+    }
+    val x = implicitly[Arbitrary[EitherT[List, String, Int]]].arbitrary.sample.get
+    assertCompiles("x: EitherT[List, String, Int]")
+    val y = x.coerce[List[Either[String, Int]]]
+    assertCompiles("y: List[Either[String, Int]]")
   }
 }
 
